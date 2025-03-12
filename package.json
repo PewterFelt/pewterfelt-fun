@@ -1,0 +1,11 @@
+{
+  "name": "pewterfelt-fun",
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@vercel/node": "^2.3.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
