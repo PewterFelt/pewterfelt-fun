@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { waitUntil } from "@vercel/functions";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 async function getLink(supabase: any, url: string) {
@@ -13,8 +14,6 @@ async function getLink(supabase: any, url: string) {
   if (existingLinkData && existingLinkData.length > 0) {
     return existingLinkData[0];
   }
-
-  // TODO: get tags and metadata from python server
 
   const { data: linkData, error: errorData } = await supabase
     .from("links")
@@ -60,6 +59,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const link = await getLink(supabase, url);
+
+    waitUntil(
+      (async () => {
+        try {
+          const res = await fetch(
+            "https://pewterfelt-ai.onrender.com/api/tag",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${process.env.PEWTERFELT_AI_KEY}`,
+              },
+              body: JSON.stringify({ url }),
+            },
+          ).then((res) => res.json());
+          if (res.detail) {
+            throw new Error(res.detail);
+          }
+
+          const {
+            tags,
+            metadata: { favicon, meta_image },
+          } = res;
+
+          const { error: updateError } = await supabase
+            .from("links")
+            .update({
+              tags: tags.join(","),
+              favicon: favicon ?? null,
+              thumbnail: meta_image ?? null,
+            })
+            .eq("url", url);
+          if (updateError) {
+            throw new Error(updateError.message);
+          }
+        } catch (error) {
+          console.error("Error processing link metadata:", error);
+        }
+      })(),
+    );
 
     const { error: userLinkError } = await supabase
       .from("user_link")
