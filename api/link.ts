@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           const {
             tags,
-            metadata: { favicon, meta_image },
+            metadata: { favicon, meta_image, title },
           } = res;
 
           const { error: updateError } = await supabase
@@ -89,6 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               tags: tags.join(","),
               favicon: favicon ?? null,
               thumbnail: meta_image ?? null,
+              title: title ?? null,
             })
             .eq("url", url);
           if (updateError) {
