@@ -36,6 +36,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: "URL is required" });
+    }
+
     const supabase = createClient(
       process.env.SUPABASE_URL!,
       process.env.SUPABASE_KEY!,
@@ -53,27 +58,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { url } = req.body;
-    if (!url) {
-      return res.status(400).json({ error: "URL is required" });
-    }
-
     const link = await getLink(supabase, url);
+
+    const { data: userLinkData, error: userLinkError } = await supabase
+      .from("user_links")
+      .insert({ link_id: link.id, user_id: user.id })
+      .select()
+      .single();
+    if (userLinkError) {
+      throw new Error(userLinkError.message);
+    }
 
     waitUntil(
       (async () => {
         try {
-          const res = await fetch(
-            "https://pewterfelt-ai.onrender.com/api/tag",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${process.env.PEWTERFELT_AI_KEY}`,
-              },
-              body: JSON.stringify({ url }),
+          const res = await fetch(`${process.env.PEWTERFELT_AI_URL!}/api/tag`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.PEWTERFELT_AI_KEY!}`,
             },
-          ).then((res) => res.json());
+            body: JSON.stringify({ url }),
+          }).then((res) => res.json());
           if (res.detail) {
             throw new Error(res.detail);
           }
@@ -83,10 +89,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             metadata: { favicon, meta_image, title },
           } = res;
 
+          if (tags && tags.length > 0) {
+            const { data: existingTags, error: existingTagsError } =
+              await supabase
+                .from("tags")
+                .select()
+                .eq("user_id", user.id)
+                .in("text", tags);
+            if (existingTagsError) {
+              throw new Error(existingTagsError.message);
+            }
+
+            const existingTagTexts = existingTags.map((tag) => tag.text);
+            const newTags = tags.filter(
+              (text: string) => !existingTagTexts.includes(text),
+            );
+
+            let allTags = [...existingTags];
+            if (newTags.length > 0) {
+              const { data: insertedTags, error: tagsError } = await supabase
+                .from("tags")
+                .insert(
+                  newTags.map((text: string) => ({ user_id: user.id, text })),
+                )
+                .select();
+              if (tagsError) {
+                throw new Error(tagsError.message);
+              }
+              allTags = [...allTags, ...insertedTags];
+            }
+
+            const { error: userLinkTagsError } = await supabase
+              .from("user_link_tags")
+              .insert(
+                allTags.map((tag) => ({
+                  user_link_id: userLinkData.id,
+                  tag_id: tag.id,
+                })),
+              );
+            if (userLinkTagsError) {
+              throw new Error(userLinkTagsError.message);
+            }
+          }
+
           const { error: updateError } = await supabase
             .from("links")
             .update({
-              tags: tags.join(","),
               favicon: favicon ?? null,
               thumbnail: meta_image ?? null,
               title: title ?? null,
@@ -100,14 +148,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       })(),
     );
-
-    const { error: userLinkError } = await supabase
-      .from("user_link")
-      .insert({ link_id: link.id, user_id: user.id })
-      .select();
-    if (userLinkError) {
-      throw new Error(userLinkError.message);
-    }
 
     return res.status(200).json({});
   } catch (error) {
