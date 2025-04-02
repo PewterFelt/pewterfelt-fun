@@ -35,12 +35,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  try {
-    const { url } = req.body;
-    if (!url) {
-      return res.status(400).json({ error: "URL is required" });
-    }
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: "URL is required" });
+  }
 
+  try {
     const supabase = createClient(
       process.env.SUPABASE_URL!,
       process.env.SUPABASE_KEY!,
@@ -72,40 +72,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     waitUntil(
       (async () => {
         try {
+          const { data: existingTags, error: existingTagsError } =
+            await supabase.from("tags").select().eq("user_id", user.id);
+          if (existingTagsError) {
+            throw new Error(existingTagsError.message);
+          }
+
           const res = await fetch(`${process.env.PEWTERFELT_AI_URL!}/api/tag`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${process.env.PEWTERFELT_AI_KEY!}`,
             },
-            body: JSON.stringify({ url }),
+            body: JSON.stringify({
+              url,
+              tags: existingTags.map((tag) => tag.text),
+            }),
           }).then((res) => res.json());
           if (res.detail) {
             throw new Error(res.detail);
           }
 
           const {
-            tags,
+            tags: generatedTags,
             metadata: { favicon, meta_image, title },
           } = res;
 
-          if (tags && tags.length > 0) {
-            const { data: existingTags, error: existingTagsError } =
+          if (generatedTags && generatedTags.length > 0) {
+            const { data: matchingTags, error: existingTagsError } =
               await supabase
                 .from("tags")
                 .select()
                 .eq("user_id", user.id)
-                .in("text", tags);
+                .in("text", generatedTags);
             if (existingTagsError) {
               throw new Error(existingTagsError.message);
             }
 
-            const existingTagTexts = existingTags.map((tag) => tag.text);
-            const newTags = tags.filter(
+            const existingTagTexts = matchingTags.map((tag) => tag.text);
+            const newTags = generatedTags.filter(
               (text: string) => !existingTagTexts.includes(text),
             );
 
-            let allTags = [...existingTags];
+            let allTags = [...matchingTags];
             if (newTags.length > 0) {
               const { data: insertedTags, error: tagsError } = await supabase
                 .from("tags")
