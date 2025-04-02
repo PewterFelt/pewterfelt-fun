@@ -86,7 +86,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             },
             body: JSON.stringify({
               url,
-              tags: existingTags.map((tag) => tag.text),
+              tags: existingTags?.length
+                ? existingTags.map((tag) => tag.text)
+                : [],
             }),
           }).then((res) => res.json());
           if (res.detail) {
