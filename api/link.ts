@@ -98,7 +98,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const {
             tags: generatedTags,
             metadata: { favicon, meta_image, title },
+            content,
           } = res;
+
+          if (content) {
+            const { error: userLinkError } = await supabase
+              .from("user_links")
+              .update({ content })
+              .eq("id", userLinkData.id);
+            if (userLinkError) {
+              throw new Error(userLinkError.message);
+            }
+          }
 
           if (generatedTags && generatedTags.length > 0) {
             const { data: matchingTags, error: existingTagsError } =
