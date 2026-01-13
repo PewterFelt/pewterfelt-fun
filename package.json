@@ -2,7 +2,7 @@
   "name": "pewterfelt-fun",
   "private": true,
   "devDependencies": {
-    "@types/node": "^22.13.10",
+    "@types/node": "^24.0.0",
     "@vercel/node": "^5.0.0"
   },
   "peerDependencies": {
